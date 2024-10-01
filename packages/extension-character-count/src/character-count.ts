@@ -93,12 +93,56 @@ export const CharacterCount = Extension.create<CharacterCountOptions, CharacterC
   },
 
   addProseMirrorPlugins() {
+    
+    let isComposing: boolean
+
+    const { storage: { characters }, options: { limit } } = this
+    
     return [
       new Plugin({
         key: new PluginKey('characterCount'),
-        filterTransaction: (transaction, state) => {
-          const limit = this.options.limit
+        handleDOMEvents: {
+            compositionstart() {
+              isComposing = true
+            },
+            compositionend(view) {
+              isComposing = false
 
+              if (!limit) {
+                return true
+              }
+             
+              const { state, dispatch } = view;
+              const { tr } = state;
+
+              const size = characters({ node: tr.doc })
+              
+              if (size > limit) {
+                
+                const pos = tr.selection.$head.pos
+                const over = size - limit
+                const from = Math.max(0, pos - over)  // Ensure `from` is not negative
+                const to = pos
+                
+                const transaction = tr.deleteRange(from, to)
+                // Dispatch the transaction to update the document
+                dispatch(transaction)
+                
+                // Prevent the default compositionend behavior
+                return false
+              }
+
+              return true
+
+            }  
+          },
+        },
+        filterTransaction: (transaction, state) => {
+          // Ignore it when composing.
+          if (isComposing) {
+            return true
+          }
+                 
           // Nothing has changed or no limit is defined. Ignore it.
           if (!transaction.docChanged || limit === 0 || limit === null || limit === undefined) {
             return true
